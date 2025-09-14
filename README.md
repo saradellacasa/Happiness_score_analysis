@@ -1,2 +1,4 @@
 # Happiness_score_analysis
-I conducted a statistical study to investigate the determinants of global happiness using data from the World Happiness Report 2019 and the World Bank. The objective was to assess which socioeconomic and psychological factors significantly explain differences in perceived well-being across 139 countries.
+As part of the Applied Linear Models course, I conducted a statistical study to investigate the determinants of global happiness using data from the World Happiness Report 2019 and the World Bank. The objective was to assess which socioeconomic and psychological factors significantly explain differences in perceived well-being across 139 countries.
+
+I applied multiple regression techniques and model selection methods, to improve explanatory power and interpretability. The final model explained more than 80% of the observed variance and emphasized the central role of social support, corruption perception, unemployment, and emotional factors. The analysis provided data-driven insights with potential implications for public policies aimed at improving quality of life.
