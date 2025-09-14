@@ -1,0 +1,674 @@
+---
+title: "Final assignment Applied"
+author: "Sara Dellacasa"
+output:
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+.libPaths("C:/R-alt-lib")
+options(repos = c(CRAN = "https://cran.r-project.org"))
+packages <- c(
+  "rmarkdown", "knitr", "tinytex", "readcsv", "readxl", "dplyr", "car", "effects", 
+  "MASS", "faraway", "ggplot2", "gridExtra", "leaps", "spdep", "rnaturalearth", 
+  "rnaturalearthdata", "sf", "countrycode", "geosphere", "proxy","wk"
+)
+install.packages(packages)
+```
+
+```{r, include=FALSE}
+library(xfun)
+install.packages(c("rmarkdown", "knitr", "tinytex", "readcsv", "readxl","dplyr","car","effects", "MASS", "faraway"))
+happscoredb =  read.csv("happscoredbbbb.csv", sep = ";", header = TRUE)
+names(happscoredb)[names(happscoredb)=="Healthy.life.expectancy.at.birth"] <- "Healthy.life.exp"
+happscoredb$Healthy.life.exp <- NULL
+happscoredb = happscoredb[!happscoredb$Country %in% c("Kosovo","Zimbabwe"), ]
+View(happscoredb)
+```
+
+The aim of this project is to analyze, through multiple regression, the relationship between perceived happiness ('Happiness Score') and a set of psychological and socioeconomic variables, building upon the work of the World Happiness Report of 2019. By analyzing these relationships, the objective is to identify the key factors that drive happiness worldwide and assess their potential impact. The analysis could be useful to identify possible effective political interventions aimed at improving the quality of life in different national contexts. 
+To achieve this I used a dataset that was downloaded and adapted from Kaggle, the link to the original file is the following:https://www.kaggle.com/datasets/mirkoferretti/data-visualization-project-trendspotters. 
+The datas in this CSV come from two main sources:  
+1.	World Happiness Report: Provides variables related to happiness and perceived quality of life (e.g., "Happiness Score" and "Social support");  
+2.	World Bank: Integrates additional socioeconomic variables, expanding the analysis compared to the original study of the World Happiness Report with variables of a different nature.  
+In addition, I decided to add two additional variables: Annual Growth Rate and Log.CO2 per capita, both sourced from the World Bank too.
+
+In total the dataset includes 137 observations referring to as many countries of the world and contains the response variable and 14 covariates all reported below:
+
+- *Happiness Score* the response variable measures overall well-being and life satisfaction  of individuals in each country based on responses to the Cantril ladder question, where individuals rate their current life on a scale from 0 (worst possible life) to 10 (best possible life).
+-  *Log GDP per capita*: The logarithm of Gross Domestic Product divided by midyear population, expressed in U.S. dollars (USD);
+- *Health Expenditure*: Percentage of GDP spent on health by the country;
+- *Education Expenditure*: Percentage of GDP spent on education by the country;
+- *Unemployment rate*: proportion of the working age population;
+- *Log CO2 Emissions*: the amount of carbon dioxide released into the atmosphere (tons per capita);
+- *Annual population growth rate(%)*;
+- *Region*: a categorical variable indicating the area of the world to which each country belongs. Originally, this variable had seven levels (Europe&Central Asia, Sub-Saharan Africa, Latin America&Caribbean, East Asia& Pacific, Middle East&North Africa, North America, South Asia). However, due to an unbalanced distribution across categories, the regions were reclassified as "Americas", "Central Asia &Europe", "Middle East & North.Africa", "South & East Asia & Pacific", "Sub-Saharan Africa".
+- *Old population*: a binary variable equal to 1 if the share of people aged over 65 exceeds the sample mean, and 0 otherwise.  
+The six other variables are national averages of binary survey responses (0 or 1) from the World Happiness Report 2019, these includes: *Social support* (1 if the respondent has someone to count on in times of trouble), *Freedom to make life choices* (1 if the respondent feels free to choose what to do with their life), *Generosity* (measured by whether the respondent has donated money to a charity in the past month, adjusted for GDP), *Perceptions of corruption* (1 if the respondent perceives corruption as widespread in government or business), *Positive affect* (1 if the respondent experienced enjoyment, laughter, or interest the previous day),*Negative affect* (1 if the respondent experienced worry, sadness, or anger the previous day).
+
+\newpage 
+## Exploratory analysis
+After addressing missing data (four NA values replaced with the respective variable means), below I reported the summary statistics of the quantitative variables, providing insights into their distribution and structure.
+```{r, echo = FALSE, results = "hide", message = FALSE, warning = FALSE}
+library(dplyr)
+
+names(happscoredb)[names(happscoredb)=="Value"] <- "Over65.percent"
+names(happscoredb)[names(happscoredb)=="Freedom.to.make.life.choices"] <- "Freedom"
+names(happscoredb)[names(happscoredb)=="Perceptions.of.corruption"] <- "Perc.Corruption"
+names(happscoredb)[names(happscoredb)=="Education.Expenditure"] <- "Educ.Expenditure"
+
+
+num_var = c(
+  "Log.GDP.per.capita", 
+  "Social.support", 
+  "Freedom", 
+  "Generosity", 
+  "Perc.Corruption", 
+  "Positive.affect", 
+  "Negative.affect", 
+  "Health.Expenditure", 
+  "Educ.Expenditure", 
+  "Unemployment", 
+  "Log.CO2.per.Capita", 
+  "Annual_Growth_Rate"
+) 
+
+happscoredb[num_var] = lapply(happscoredb[num_var], as.numeric)
+
+
+MeanLogGDP<- mean(happscoredb$Log.GDP.per.capita, na.rm = TRUE) 
+happscoredb$Log.GDP.per.capita[happscoredb$Country == "Iran"] <- MeanLogGDP
+
+happscoredb$Old_pop<- as.factor(happscoredb$Old_pop)
+happscoredb$Region_factor <- as.factor(happscoredb$Region_factor)
+levels(happscoredb$Region_factor) <- c("Americas", "Centr.Asia&Europe", "MiddEast&North.Africa", "S.E.Asia.Pacific", "Africa.Sub.Sahara")
+happscoredb= happscoredb %>%
+  select(-Region, -Over65.percent, -CO2_Emissions_per_Capita)
+```
+
+```{r, echo=FALSE}
+library(xtable)
+
+not_numcols <- c("Old_pop", "Region_factor", "Country.Code", "Year", "Country", "Happiness.Score")
+summary_numeric <- summary(happscoredb[ , !names(happscoredb) %in% not_numcols])
+summary_numeric
+```
+For the categorical and the binary variables, the distribution can be represented using boxplots of the Happiness Score across the categories defined by each dummy variable. These plots also allow us to assess whether the distributions are approximately uniform across the various categories.
+
+On the left, we observe clear regional differences: countries in the Americas and Central Asia & Europe report higher median happiness levels, while Sub-Saharan Africa shows lower scores with lower variability.
+On the right, countries with a higher share of elderly population (coded as Old Pop = 1) exhibit notably higher happiness scores on average compared to those with a younger population. This suggests a potential positive association between demographic maturity and subjective well-being.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.height=3, fig.width=8}
+library(ggplot2)
+library(dplyr)
+library(gridExtra) 
+
+freq_region = happscoredb %>%
+  group_by(Region_factor) %>%
+  summarise(count = n())
+
+freq_oldpop = happscoredb %>%
+  group_by(Old_pop) %>%
+  summarise(count = n())
+
+p1 = ggplot(happscoredb, aes(x = Region_factor, y = Happiness.Score)) + 
+  geom_boxplot(fill = "lightblue", color = "black") + 
+  geom_text(data = freq_region, aes(x = Region_factor, y = min(happscoredb$Happiness.Score) - 1, 
+                                    label = paste0("n=", count)), size = 4, color = "black") + theme_minimal() + 
+  labs(title = "Boxplot:Happiness Score by Region", x = "Region", y = "Happiness Score") +
+  theme(axis.text.x = element_text(angle = 15, hjust = 1))  
+
+p2 <- ggplot(happscoredb, aes(x = Old_pop, y = Happiness.Score)) + 
+  geom_boxplot(fill = "salmon", color = "black") + 
+  geom_text(data = freq_oldpop, aes(x = Old_pop, y = min(happscoredb$Happiness.Score) - 1, 
+                                    label = paste0("n=", count)), 
+            size = 4, color = "black") +
+  theme_minimal() + 
+  labs(title = "Boxplot:Happiness Score by Old Population", x = "Old Pop", y = "Happiness Score")
+grid.arrange(p1, p2, ncol = 2)
+```
+\newpage 
+For what concerns the response variable the distribution plot is as follows:
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.height=4, fig.width=8}
+ggplot(happscoredb, aes(x = Happiness.Score)) + 
+  geom_histogram(aes(y = after_stat(density)), binwidth = 0.1, fill = "lightgreen", color = "black", alpha = 0.7) + 
+  geom_density(color = "darkgreen", linewidth = 1) + 
+  theme_minimal() + 
+  labs(title = "Distribution of Happiness Score with Density Line", 
+       x = "Happiness Score", 
+       y = "Density") +
+  theme(plot.title = element_text(hjust = 0.5))
+```  
+  
+The previous plot displays the distribution of the response variable Happiness Score, which ranges from 0 to 10, as defined by the methodology of the World Happiness Report. The variable reflects self-reported life satisfaction on a scale from worst to best possible life, and it has been kept in its original form to maintain full comparability with the international literature. The distribution appears moderately asymmetric, with a slight left skew. 
+
+Moreover, while linear regression models are typically designed for unbounded response variables (from -infinity to +infinity, using a bounded outcome such as this may lead to mild violations of some classical key assumptions of linear regression, particularly the linearity between predictors and response, constant variance of residuals (homoscedasticity), and normality of errors, in particular near the boundaries of the scale.
+For these reasons, while no transformation has been applied at this stage, further diagnostic analyses will be conducted to evaluate whether a transformation could improve the model's adherence to these assumptions and overall robustness. Particular attention will also be paid to ensuring that the predicted values remain within a plausible and interpretable range, despite the bounded nature of the response variable.
+
+
+\newpage  
+
+To start analysing the relationship between the explanatory variables and the response variable I used some scatterplots (in blue). In the black plots, instead, we display the relationship between pairs of explanatory variables that show a high correlation (greater than 0.65) based on the correlation matrix.
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.height=8, fig.width=10}
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+
+# Lista variabili per Happiness.Score
+variables_to_plot <- c("Log.GDP.per.capita", "Social.support", "Freedom", 
+                       "Generosity", "Perc.Corruption", "Positive.affect", 
+                       "Negative.affect", "Health.Expenditure", 
+                       "Educ.Expenditure", "Unemployment", 
+                       "Log.CO2.per.Capita", "Annual_Growth_Rate")
+
+# Settiamo layout unico: 4 righe da 6 plot (24 spazi, ne useremo 18)
+par(mfrow = c(4, 4), mar = c(4, 4, 2, 1))
+
+# Prima parte: Happiness.Score vs tutte le variabili
+for (var in variables_to_plot) {
+  plot(happscoredb$Happiness.Score, happscoredb[[var]], 
+       main = "", xlab = "Happiness.Score", ylab = var,
+       pch = 1, col = "darkblue", cex = 1.8)
+}
+
+plot(happscoredb$Log.GDP.per.capita, happscoredb$Social.support, 
+     main = "", xlab = "Log.GDP.per.capita", ylab = "Social.support",
+     pch = 1, col = "black", cex = 1.8)
+
+plot(happscoredb$Log.GDP.per.capita, happscoredb$Log.CO2.per.Capita, 
+     main = "", xlab = "Log.GDP.per.capita", ylab = "Log.CO2.per.Capita",
+     pch = 1, col = "black", cex = 1.8)
+
+plot(happscoredb$Social.support, happscoredb$Negative.affect, 
+     main = "", xlab = "Social.support", ylab = "Negative.affect",
+     pch = 1, col = "black", cex = 1.8)
+
+plot(happscoredb$Social.support, happscoredb$Log.CO2.per.Capita, 
+     main = "", xlab = "Social.support", ylab = "Log.CO2.per.Capita",
+     pch = 1, col = "black", cex = 1.8)
+
+```
+As highlighted by the correlation matrix, a strong relationship between logGDP and logCO2 is clearly visible.The other correlations identified in the matrix also appear to be confirmed by the scatterplots. After performing variable selection, it will be necessary to compute the Variance Inflation Factors (VIF) to assess potential multicollinearity issues in the regression model.  
+
+\newpage 
+## Variable selection:  
+First we compute a linear regression with all the predictors:
+```{r, results = "hide"}
+ols = lm( Happiness.Score ~ Log.GDP.per.capita + Social.support  + Freedom + Generosity +  
+            Perc.Corruption + Positive.affect + Negative.affect + Educ.Expenditure + Unemployment +  
+            Log.CO2.per.Capita + Annual_Growth_Rate + Region_factor + Old_pop*Health.Expenditure,
+            data=happscoredb)
+summary(ols)
+```
+The summary output shows that several variables are not statistically significant, likely due to the inclusion of too many predictors in the model, some of which are highly correlated. This suggests that the model, in its current form, may not be appropriate to reliably explain the response variable.
+
+In order to choose a subset with the most relevant predictors the following methods were analyzed:  
+Best subset selection, Backward selection, Forward selection and, for shrinkage methods, only Lasso Regression was considered, as it is the only approach that performs variable selection.  
+Considering all selection techniques, the best subset selection was ultimately chosen, as it compares all 2^p possible combinations of variables, unlike forward and backward methods which follow a sequential process and do not evaluate all possible subsets for each model size.  
+So Best Subset Selection was performed and it fitted a separate OLS regression for each combination of the predictors. For each model size, the best model, the one with the highest R2, was selected.  
+The result of the selection is saved in summary1, and I use plots of the selection criteria to assess which model is recommended by the method.
+```{r, echo=FALSE, results=FALSE, message=FALSE}
+library(leaps)
+library(dplyr)
+
+happscore= happscoredb %>% select(-Year, -Country, -Country.Code)
+
+happscore$Old_pop= as.numeric(happscore$Old_pop)-1
+happscore$HealthExpOldpop= happscore$Old_pop * happscore$Health.Expenditure
+happscore$Old_pop=factor(happscore$Old_pop, levels = unique(happscore$Old_pop))
+```
+
+```{r}
+bestsubsett=regsubsets(Happiness.Score ~ ., data = happscore, nvmax = ncol(happscore)-1+3)
+summary1=summary(bestsubsett)
+```
+  
+The criteria used to determine the optimal number of predictors include the Bayesian Information Criterion (BIC) the Akaike Information Criterion (AIC) and  Mallow’s Cp, lower values of this criterias are preferred so in the plots the smallest value will be highlighted. Finally, the Adjusted R2 that is preferred when higher. This last criteria  does not explicitly penalize model complexity as the others do. In fact Mallow’s Cp, AIC, and BIC are often used to avoid overfitting.
+
+```{r, echo=FALSE, fig.width=10, fig.height=2, warning=FALSE, message=FALSE, results='hide'}
+
+par(mfrow = c(1, 4), mar = c(4, 4, 2, 1))
+
+n <- nrow(happscore)  # numero di osservazioni
+aic_values <- summary1$rss + 2 * (1:length(summary1$bic)) * summary1$rss / n
+
+# BIC
+plot(summary1$bic, type = "b", pch = 19, xlab = "Number of predictors", ylab = "", main = "BIC")
+abline(v = which.min(summary1$bic), col = 2, lty = 2)
+
+# AIC
+plot(aic_values, type = "b", pch = 19, xlab = "Number of predictors", ylab = "", main = "AIC")
+abline(v = which.min(aic_values), col = 2, lty = 2)  # <-- corretto qui
+
+# Mallow's Cp
+plot(summary1$cp, type = "b", pch = 19, xlab = "Number of predictors", ylab = "", main = "Mallow's Cp")
+abline(v = which.min(summary1$cp), col = 2, lty = 2)
+
+# Adjusted R^2
+plot(summary1$adjr2, type = "b", pch = 19, xlab = "Number of predictors", ylab = "", main = "Adjusted R^2")
+abline(v = which.max(summary1$adjr2), col = 2, lty = 2)
+```
+All criteria suggest that the optimal model includes 9 predictors, with the exception of the Adjusted R^2, which reaches its maximum at 11 predictors. However, based on the principle of parsimony and the clear flattening of the effect in R^2 adjusted plot after ninth predictor. I considered an appropriate choice to select 9 predictors.
+
+These, according to the best subset selection method are:
+
+LogGDP per Capita , Social Support , Perception of Corruption , Positive Affect , Negative Affect , Unemployment , Region factor: South&East Asia & Pacific , Region Factor: Africa Sub-Sahara , Health Expenditure * OldPop.
+
+To include only the significant levels of the categorical variable Region_factor, two binary variables were created: "Sub-Saharan Africa" and "South & East Asia & Pacific."
+
+\newpage
+## Cross validation  
+Leave-One-Out Cross-Validation (LOOCV) was employed to assess model performance, with each observation iteratively held out as the validation set while the model was trained on the remaining data. This method yields an almost unbiased estimate of the test error. By examining how the cross-validation error varies across different model sizes, we can further validate the selection of the optimal number of predictors.This method is more used when the main goal is doing predictions but I decided to check it anyway. to see if the results are coherent with the previous criteria analysis. The lowest cross-validation error is observed at the nine-predictor model, indicating coherence with the previous evaluation of the criteria.
+```{r}
+View(happscore)
+p = ncol(happscore)-1+3 
+k= nrow(happscore)
+set.seed (1)
+folds= sample (1:k,nrow(happscore),replace =FALSE) 
+cv.errors <- matrix (NA ,k, p, dimnames =list(NULL , paste (1:p) ))
+
+for(j in 1:k){
+best.fit =regsubsets(Happiness.Score ~ ., data=happscore[folds!=j,], nvmax=p)
+
+for(i in 1:p) {
+mat = model.matrix(as.formula(best.fit$call[[2]]), happscore[folds==j,])
+coefi = coef(best.fit ,id = i)
+xvars = names(coefi )
+pred = mat[,xvars ]%*% coefi
+cv.errors[j,i] = mean( (happscore$Happiness.Score[folds==j] - pred)^2)
+}
+}
+cv.mean <- colMeans(cv.errors)
+```
+
+```{r, echo=FALSE,fig.width=7, fig.height=3}
+par(mfrow = c(1,1))
+plot(cv.mean, type = "b", pch = 19,
+     xlab = "Number of predictors",
+     ylab = "CV error")
+text(x = 1:length(cv.mean), 
+     y = cv.mean, 
+     labels = round(cv.mean, 3), 
+     pos = 3, cex = 0.6)
+abline(v = 9, col = 2, lty = 2)
+```  
+```{r, results='hide', echo=FALSE}
+cv.mean <- colMeans(cv.errors)
+cv.mean
+```
+
+                   
+```{r, echo=FALSE}
+besthappscore= happscore
+besthappscore$S.E.Asia.Pacific<- factor(ifelse(besthappscore$Region_factor == "S.E.Asia.Pacific", 1, 0), levels = c(0, 1))
+besthappscore$Africa.Sub.Sahara <- factor(ifelse(besthappscore$Region_factor == "Africa.Sub.Sahara", 1, 0), levels = c(0, 1))
+besthappscore= besthappscore%>% select(-Region_factor)
+```
+
+```{r, echo=FALSE, message=FALSE, results="hide"}
+library(car)
+best_variables <- c("Log.GDP.per.capita", "Social.support", "Perc.Corruption", "Positive.affect","Negative.affect","Unemployment","Africa.Sub.Sahara","HealthExpOldpop", "Happiness.Score","S.E.Asia.Pacific")
+
+bestreg=lm(Happiness.Score ~ ., data = besthappscore[best_variables])
+
+bestreg_log <- lm(log(Happiness.Score) ~ ., data = besthappscore[best_variables])
+```
+## Multicollinearity  
+After performing variable selection, we assess the presence of potential multicollinearity among the selected predictors by examining the Variance Inflation Factors (VIF). Multicollinearity occurs when two or more predictors are highly correlated, making it difficult to distinguish their individual contributions. This can inflate the standard errors of the estimated coefficients, potentially obscuring the statistical significance of predictors that genuinely contribute to the model.
+
+```{r}
+vif(bestreg)
+```
+From this, we can observe that LogGDP is slightly more problematic than the other variables but, since LogCO2 is no more included in the predictors, it does not represent a problem anymore because all the VIFs are under the threshold of 10. So all the vifs are acceptable.  
+
+## Regression diagnostics
+The following diagnostic analysis evaluates whether the assumptions underlying the linear regression model are reasonably satisfied.
+
+1. **Homoscedasticity**   
+
+This assumption implies constant variance of the residuals across the range of fitted values.  
+The residual vs. fitted plot can show if the assumption holds: residuals randomly located around zero, forming a null plot show homoschedasticty. If the residuals seems to show a pattern this can imply heteroschedasticity, any increasing or decreasing spread suggests it. This plot can also highlight potential non-linearity in the model.  
+
+The residuals revealed mild signs of heteroscedasticity  as indicated by the left-opening megaphone
+pattern. In an attempt to address this, a *log-transformation* of the response variable (Happiness Score) was applied. While this transformation reduced the absolute magnitude of residuals due to the compression of the response scale, it failed to eliminate the funnel-shaped pattern, as shown in the plot below, and overall model diagnostics reported in next pages did not improve.
+Therefore, to preserve interpretability and consistency with the methodology of the World Happiness Report, the original linear model was retained.
+
+```{r, echo=FALSE, fig.width=8, fig.height=3}
+par(mfrow=c(1, 2)) 
+plot(fitted.values(bestreg),residuals(bestreg),
+     xlab = "Fitted Values", 
+     ylab = "Residuals",
+     main = "Linear regression",
+     pch = 20)
+abline(h = 0, col = "red") 
+
+plot(fitted.values(bestreg_log),residuals(bestreg_log),
+     xlab = "Fitted Values", 
+     ylab = "Residuals",
+     main = "Log- linear regression",
+     pch = 20)
+abline(h = 0, col = "red") 
+
+```
+
+A second strategy was to apply *Weighted Least Squares (WLS)* to correct for non-constant variance.
+In order to find the weights (typically as the inverse of the variance), since no external estimates of error variance were available, I approximated them indirectly by modelling how the residuals varied with the fitted values from the OLS model. However, the resulting weights were nearly uniform, and the WLS fit turned out to be almost identical to the OLS one.For this reason, I decided to keep the standard linear model, which remains adequate in this context.  
+
+In conclusion, since neither the log-transformation nor WLS meaningfully improved the model diagnostics, and both introduced additional complexity, I opted to maintain the original linear regression model. It remains an adequate specification, particularly due to its transparency and ease of interpretation, which are important for subsequent inference and prediction stages.
+
+2. **Linear relationship between the predictors and the response variable**  
+
+This second assumption is assessed using the following plots that displays the residuals plot across individual predictors. If the points are randomly scattered around zero and the blue smoothing line remains approximately flat, the linearity assumption is considered to be satisfied. If there are visible curves or systematic trends, the linearity assumption is violated for that particular predictor.
+
+```{r, results='hide', fig.width=8, fig.height=5}
+library(car)
+residualPlots(bestreg,terms = ~ . - Africa.Sub.Sahara - S.E.Asia.Pacific)
+```  
+The scatterplots of Pearson residuals against the continuous predictors do not exhibit clear or systematic patterns, suggesting that the assumption of linearity is reasonably satisfied for these variables. The residuals appear to be randomly scattered around zero, and the smoothing lines remain relatively flat, indicating no major deviations from linearity. The only noticeable pattern can be observed in the interaction term HealthExp * OldPop, a variable created to capture the effect of an increase in health expenditure (as a percentage of GDP) specifically in countries with an older population. This pattern arises because when the dummy variable OldPop is equal to zero, the interaction term also takes the value zero, regardless of the level of health expenditure.
+
+\newpage
+For the categorical variables, we can use boxplots:
+
+```{r, echo=FALSE, fig.width=4, fig.height=2}
+library(ggplot2)
+library(gridExtra)
+library(patchwork)
+
+res = residuals(bestreg)
+box1 <- ggplot(besthappscore, aes(x = as.factor(Africa.Sub.Sahara), y = res, fill = as.factor(Africa.Sub.Sahara))) +
+  geom_boxplot() +
+  ggtitle("Residuals'distrib Sub-Saharan Africa") +
+  theme(
+    legend.position = "none",
+    axis.title = element_text(size = 6),
+    axis.text = element_text(size = 6),
+    plot.title = element_text(size = 7))
+
+box2 <- ggplot(besthappscore, aes(x = as.factor(S.E.Asia.Pacific), y = res, fill = as.factor(S.E.Asia.Pacific))) +
+  geom_boxplot() +
+  ggtitle("Residuals' distrib S.E.Asia.Pacific") +
+  theme(
+    legend.position = "none",
+    axis.title = element_text(size = 6),
+    axis.text = element_text(size = 6),
+    plot.title = element_text(size = 7))
+box1 + box2
+```  
+  
+The medians are quite similar and close to zero, which is a positive indication. There is no strong skewness or evident pattern, suggesting that there are no major violations of the linearity assumption for these categorical variables. However a few extreme observations seem present and the spread of the residuals varies slightly between groups, this may indicate that the model fits some regions better than others.
+
+3. **Normality assumption of errors**  
+
+The residuals should follow a Normal distribution in order to make inferences about the model.
+The normality assumption is assessed using Q-Q plots, the Shapiro-Wilk test, and additional plots.
+The Q-Q plot assesses the normality of residuals by comparing their quantiles to those of a normal distribution. If residuals are normally distributed, the points should align along a straight diagonal line; deviations suggest skewness or heavy tails.  
+
+```{r, fig.width=6, fig.height=3}
+par(mfrow=c(1, 2)) 
+plot(bestreg, which = 2)
+hist(res,col = "grey")
+```  
+
+The Q-Q plot and histogram suggest that the residuals are approximately normally distributed, aligning reasonably well with the theoretical distribution. However, a more evident deviation can be observed in the left tail of the Q-Q plot, indicating a mild left skew. While the Shapiro-Wilk test does not allow us to formally accept the null hypothesis of normality, the p-value is very close to the conventional threshold. Given the visual evidence and the limited departure from normality, the assumption can still be considered reasonably satisfied for the purposes of linear regression inference.
+
+```{r}
+shapiro.test(residuals(bestreg))
+```
+4. **Uncorrelation of errors**     
+Residuals should be independent and exhibit no autocorrelation. Since the dataset presents the variable "Country" to assess this assumption, residuals were plotted on a world map to identify potential spatial clusters. Ideally, residuals should be randomly distributed across regions, showing no systematic pattern. Due to the lack of temporal data, all the datas refer to 2019, no time-related analysis was performed.  
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width=8, fig.height=7, out.heigth="70%", out.width="70%", fig.align='center'}
+library(countrycode)
+library(rnaturalearth)
+library(spdep)
+library(rnaturalearthdata)
+library(sf)
+happscoredb$res <- resid(bestreg)
+world_data <- ne_countries(scale = "medium", returnclass = "sf")
+capital_coords <- world_data %>%
+  select(iso_a3, name, geometry) %>%
+  mutate(
+    longitude = st_coordinates(st_centroid(geometry))[,1],
+    latitude = st_coordinates(st_centroid(geometry))[,2]
+  ) %>%
+  rename(Country = name)
+happscoredb <- happscoredb %>%
+  left_join(capital_coords, by = "Country")
+
+
+View(happscoredb)
+happscoredb_na = happscoredb[is.na(happscoredb$latitude), ]
+
+happscoredb_na1 <- happscoredb[is.na(happscoredb$longitude), ]
+
+happscoredb<-happscoredb %>%
+  mutate(
+    longitude = ifelse(Country == "Bosnia and Herzegovina", 18.0, longitude),
+    latitude = ifelse(Country == "Bosnia and Herzegovina", 44.0, latitude),
+    longitude = ifelse(Country == "Cote d'Ivoire", -5.0, longitude),
+    latitude = ifelse(Country == "Cote d'Ivoire", 8.0, latitude),
+    longitude = ifelse(Country == "Dominican Republic", -70.5, longitude),
+    latitude = ifelse(Country == "Dominican Republic", 19.0, latitude),
+    longitude = ifelse(Country == "Eswatini", 31.5, longitude),
+    latitude = ifelse(Country == "Eswatini", -26.5, latitude),
+    longitude = ifelse(Country == "Macedonia", 41.61, longitude),
+    latitude = ifelse(Country == "Macedonia", 21.74, latitude),
+    longitude = ifelse(Country == "United Kingdom of Great Britain and Northern Ireland", 55.4, longitude),
+    latitude = ifelse(Country == "United Kingdom of Great Britain and Northern Ireland", -3.4, latitude)
+  )
+
+
+library(geosphere)
+distance_matrix <- distm(
+  x = happscoredb[, c("longitude", "latitude")], 
+  fun = distGeo
+)
+distance_matrix[is.na(distance_matrix)] <- max(distance_matrix, na.rm = TRUE)
+W_distance <- 1 / (1 + distance_matrix)
+listw_distance <- mat2listw(W_distance, style = "W")
+
+library(spdep)
+moran_test <- moran.test(happscoredb$res, listw_distance)
+#print(moran_test)
+world_data <- world_data %>%
+  left_join(happscoredb, by = c("name" = "Country"))
+if(!"res" %in% names(world_data)) {
+  stop("Error: Residuals column (res) not found in world_data after merge.")
+}
+
+library(ggplot2)
+ggplot(world_data) +
+  geom_sf(aes(fill = res), color = "darkgrey") +  # Countries with white borders
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  theme_minimal() +
+  labs(title = "Residuals Spatial Distribution", fill = "Residuals") +
+  theme(legend.position = "bottom")
+colnames(happscoredb)[colnames(happscoredb) == "Country"] = "Country"
+```
+The spatial distribution map of residuals reveals patterns that may suggest the presence of spatially correlated errors. In particular, neighboring countries often exhibit similar residual (signs and values). Some clusters of overestimation (orange-red areas) are present in Latin America and parts of Africa, and underestimation clusters (blue-purple) in South and Southeast Asia.  
+This visual evidence raises concerns about the independence of errors across geographic units, which is a key assumption of linear regression. When residuals are correlated, the estimated standard errors are often underestimated. This results in overly narrow confidence intervals, and p-values that are smaller than they should be, potentially leading to the erroneous conclusion that some parameters are statistically significant when they may not be. This is an important aspect to keep in mind, as it may lead to the erroneous conclusions.
+
+\newpage
+## Unusual Observations  
+We proceed by analyzing high leverage points, outliers, and influential observations.
+
+**High leverage points** are data points with extreme values for the predictor variables, located far from the mean of the other observations. These points are identified by their hat values, a commonly used threshold is 2(p+1)/n , where p is the number of predictors and n is the sample size.
+
+**Outliers** are observations that do not fit well within the assumed regression model. They are typically detected using standardized (or studentized) residuals. If these residuals exceed 3 or fall below -3, the corresponding observation is considered an outlier.
+
+The leverage versus standardized residuals plot is useful for detecting both high leverage points and outliers simultaneously.
+
+```{r, results='hide'}
+#library(MASS)
+infl=influence(bestreg)
+hat=infl$hat
+hat[which(hat>=(2*10/nrow(happscoredb)))]
+```
+
+```{r, echo=FALSE}
+countries <- happscoredb$Country[which(hat >= (2*10/nrow(happscoredb)))]
+pos_values <- ifelse(countries %in% c("Haiti", "Afghanistan", "Tajikistan"), 3, 2)
+pos_values <- ifelse(countries=="Armenia",1,pos_values) 
+```
+
+```{r, echo=FALSE, fig.width=5, fig.height=3.5, out.heigth="60%", out.width="60%", fig.align='center'}
+rsta = rstandard(bestreg)
+
+plot(hat, rsta, ylim=c(-4,4),
+        cex = 0.6,         
+     cex.lab = 0.6,      
+     cex.axis = 0.6)
+abline(v=(2*10/nrow(happscoredb)),col=3)
+abline(h=-3, col=2)
+abline(h=3, col=2)
+abline(h=0, lty=2, col="black") 
+selected_points = which(hat >= (2 * 10 / nrow(happscoredb)) |
+                         (rsta >= 3 | rsta <= -3))
+
+text(hat[selected_points], rsta[selected_points], 
+     labels = happscoredb$Country[selected_points], 
+     cex = 0.55, pos = pos_values) 
+```  
+
+Outlier points are identified as those falling beyond the red lines at standardized residual values of ±3.  
+Rwanda is the only country below the threshold (at -3), making it an outlier, even if only slightly, since its residual is –3.231. Sri Lanka is close to the lower boundary but does not exceed it, so it is not formally classified as an outlier. No observations lie above the +3 threshold.
+
+Among the high leverage points (identified by the vertical green line at 2(p+1)/n), several countries stand out: Afghanistan, South Africa, Haiti, Singapore, Qatar, Lebanon, and again Rwanda. It is important to identify them because they have the potential to disproportionately affect the fitted regression line. However, their presence does not necessarily require removal
+
+Since Rwanda is the only outlier and does not form a group, it is not particularly problematic. A single outlier typically does not distort the model significantly. However, it should be noted that the model does not predict this observation’s Happiness Score well (although prediction is not the primary goal of this analysis). We can also further assess for its potential impact assessing if it's an influential point.
+
+We can detect **influential points** using **Cook's Distance**.Values between 0.5 and 1 indicate moderately influential observations, while values greater than 1 suggest highly influential points, whose removal would significantly affect the fitted model.
+
+The two plots provide complementary views on the influence of individual observations using Cook’s Distance.
+
+- The Residuals vs Leverage plot (left) this time should include also Cook’s distance contours, but they are not visible in this case because no observation lies close to or beyond the 0.5 Cook’s distance contour. This suggests that there are no points with a strong influence on the regression model. Most points are clustered in the central region, indicating a stable fit.
+
+- The Half-Normal plot of Cook’s Distance (right) confirms this impression. While Rwanda, Lebanon, and Botswana show the highest Cook’s distances among the observations, their values are still relatively low (well below the common threshold of 0.5). This suggests they are not strongly influential, in fact their Cook's Distances are Rwanda=0.193, Lebanon= 0.097, Botswana=0.068.
+
+So I decided to keep Rwanda even though it is both an outlier and a high leverage point since it is not considered influential and so does not significantly affect the regression estimates  
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE, fig.width=10, fig.height=3.5}
+library(faraway)
+par(mfrow=c(1, 2)) 
+plot(bestreg, which=5)
+abline(h=-3, col=2)
+cook= cooks.distance(bestreg)
+halfnorm(cook, 3, labs = paste(happscoredb$Country), ylab = "Cook's Distance")
+```  
+
+## Interpretation of coefficients
+The summary of my final model is the following:
+```{r}
+summary(bestreg)
+``` 
+The interpretation of beta coefficients depends on the units in which covariates are measured and must be adjusted accordingly. For continuous predictors, each beta represents the expected change in the Happiness Score resulting from a one-unit increase in the corresponding variable, assuming all other covariates are held constant (with continuous ones at their mean and binary ones at zero). However, for some predictors,such as social support, perceptions of corruption, positive affect, and negative affect, a full one unit increase is not realistic, as these variables are national averages of binary responses and therefore range between 0 and 1. In these cases, more meaningful interpretations can be obtained by considering smaller increments. For instance, a 0.01 (or 1 percentage point) increase corresponds to an expected change in the Happiness Score equal to 0.01 times the estimated beta coefficient.
+
+After this premise, we can analyze each of the variables in the regression:
+
+*Intercept* (-0.851377, p-value=  0.329708)
+This is the predicted happiness score when all independent variables are equal to zero. However, this value may not be meaningful in isolation because not all predictors can realistically take zero values (e.g. GDP per capita, Unempolyment or Health Expenditure). Given its p-value it is not significantly different from zero, this suggests that the intercept itself might not be meaningful.
+
+*Log.GDP.per.capita* (0.224847, p-value =0.003979 **)
+The log of GDP per capita, as expected has a clear positive effect on happiness. 
+For every unit increase in logGDP per capita, the happiness score is predicted to increase by about 0.224847 units.  
+
+*Social.support* (3.496474 , p-value =4.84e-07 ***)
+Social support has a strong positive effect on happiness. For each unit increase in social support, happiness is predicted to increase by 3.496474 units, with a very low p-value indicating statistical significance. A one percentage point increase in social support is associated with an approximate 0.035 increase in the Happiness Score.
+
+*Perceptions.of.corruption* (-0.783279, p-value 0.002472 **)
+Perceptions of corruption has a negative impact on happiness. For a unit augment of Perceptions of corruption the happiness score will decrease by 0.783279. 
+ For smaller, more realistic changes, such as a 0.01 increase, the expected decrease in happiness would be around 0.0078 points.
+
+*Positive.affect* (2.430555, p-value 2.53e-07 ***)
+Positive affect has a positive and statistically significant relationship with happiness. An increase of 1 point in positive emotions is associated with an increase in happiness by 2.430555 units. For instance, a 1 percentage point increase (0.01 units) would yield an expected rise of approximately 0.024 in the Happiness Score.
+
+*Negative.affect* (1.958242, 0.007168 **)
+Negative affect is lesser significant, with an increase of 1 in negative emotions being associated with an increase in happiness by 1.958242 units. An increase of 0.01 in negative affect will increase the happiness score by 0.01958 units, while a more plausible 0.01 increase would result in a 0.0196 point rise. This result is unexpected  and it can be due from correlation with other explanatory variables, despite the VIF analysis not indicating problematic multicollinearity. The only notable correlation, as observed in the scatterplots, appears to be with social support.
+
+*Unemployment* (-0.042961, 3.28e-06 ***)
+Unemployment has a negative effect of 0.042961 meaning that a 1 percentage point increase in the unemployment rate will decrease the happiness score by 0.042961 units. The p-value (3.28e-06) indicates that this effect is statistically significant.
+
+*Africa sub- Sahara* (-0.299827, p-value 0.044285 *)
+Even if it has a small p-value this variable is still slightly significant, it has a negative effect on the happiness score with coef -0.299 this means that if the Country is part of Sub-Saharan Africa we expect an happiness score decreased by 0.299827 unit with other variables fixed.
+
+*S.E.Asia.Pacific*(-0.469900,  0.000536 ***)
+This variable has a negative effect on the happiness score with coef -0.4699, this means that if the Country is part of South and East Asia and Pacific area we expect an happiness score decreased by 0.469933 unit with respect to countries in the rest of the world.
+
+*Health.ExpenditureOld_Pop* (0.046791, 0.000577 ***):
+Health expenditure has a significant positive coefficient of 0.046791 in the world's nations that have an eldest population. The low p-value suggests that this effect is significant, indicating that a 1% percentage of health expenditure in GDP is associated with 0.046791 increase in happiness for countries with older population.
+
+## Testing a group of predictors
+I decided to compare my regression model with a reduced model that includes only Log GDP per capita, Social support, and Unemployment as they are well-established predictors of subjective well-being in the literature. They capture key economic, social, and labor market dimensions strongly associated with happiness. In order to do this comparison an ANOVA test is used. 
+
+A small p-value from the ANOVA test leads to reject H0: narrower model, indicating that other terms significantly improve the model.
+
+```{r, echo=FALSE}
+imp_variables <- c("Log.GDP.per.capita", "Social.support","Unemployment", "Happiness.Score")
+altreg=lm(Happiness.Score ~ ., data = happscoredb[imp_variables])
+```
+
+```{r}
+anova(bestreg, altreg)
+```
+The F-test (F = 11.12, p < 0.05) shows that the full model significantly outperforms the reduced model. The inclusion of additional covariates leads to a relevant improvement in model fit. Therefore, we reject the null hypothesis and confirm the importance of the additional variables
+
+## Goodness of Fit Evaluation  
+
+To assess how well the model fits the data, we can rely on coefficient of determination R-squared which measures the proportion of variance in Y explained by the predictors included in the model.
+```{r, echo=FALSE}
+fin=summary(bestreg)
+fin$r.squared
+```  
+R² = 0.8226 indicate that approximately 82% of the variance in the Happiness Score is explained by the model. So the model explain in a proper way the variance of the Happiness Score.
+
+Since R² always increases with additional predictors, it may overestimate the model's performance since I have nine covariates. So I also considered the adjusted R² = 0.8100, which penalizes the inclusion of non-informative variables. The relatively small drop between R² and adjusted R² confirms that the included variables contribute meaningfully to the model and that overfitting is not a major concern.
+
+Together, these indicators suggest that the model offers a good overall fit, explaining a large portion of the variation in happiness scores across countries.
+```{r, echo=FALSE}
+fin=summary(bestreg)
+fin$adj.r.squared
+```  
+
+## Prediction
+
+To illustrate the predictive capabilities of the model, we simulate a new observation corresponding to a hypothetical country characterized by the following socio-economic features:
+```{r}
+new_data = data.frame(Log.GDP.per.capita = 10.5, Social.support = 0.85,  
+                      Perc.Corruption = 0.75, Positive.affect = 0.7,  
+                      Negative.affect = 0.3, Unemployment = 6, Africa.Sub.Sahara = "0",  
+                      HealthExpOldpop = 4.9 ,S.E.Asia.Pacific = "1")
+predict(bestreg, newdata = new_data, interval = "prediction")
+```
+The estimated Happiness Score for the selected values is 5.684534, with a 95%
+prediction interval ranging from approximately 4.68 to 6.69.
+
+## Fake data simulation
+
+Considering the multiple linear regression model fitted at the previous point we can simulate n data points from the fitted model, assuming the estimated parameters as the true parameters.
+We provide a scatterplot of the simulated response vs the observed response.
+Each point represents an observation while the line represent a perfect match between simulated values and observed ones. 
+
+```{r, echo=FALSE}
+set.seed (123)
+n <- nrow(happscoredb)
+
+X <- model.matrix(bestreg) 
+beta <- coef(bestreg)
+y_pred <- X %*% beta   
+sigma_hat = summary(bestreg)$sigma
+y_sim <- y_pred + rnorm(n, mean = 0, sd = sigma_hat)
+simulated_data <- data.frame(X[,-1], Simulated_Y = y_sim) 
+```
+
+```{r, echo=FALSE, fig.width=5, fig.height=3.5}
+plot(y_sim, happscoredb$Happiness.Score,
+     xlab = "Simulated Response",
+     ylab = "Observed Response",
+     main = NULL,
+     col = "pink", pch = 16, cex = 0.7,cex.lab = 0.6,cex.axis = 0.5)   
+abline(0,1, lwd = 1, col = "lightblue")
+```
+
+The data points align closely along the reference line, indicating a strong correspondence between observed and simulated responses. This visual evidence suggests that the model captures the underlying structure of the data effectively and provides reliable predictions.
+
+The absence of major deviations or dispersion patterns implies that the model does not suffer from substantial bias across the range of predictions. Overall, this result reinforces the robustness and adequacy of the linear model in explaining the variability in the Happiness Score.
