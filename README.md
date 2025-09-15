@@ -11,3 +11,8 @@ This repository contains an R Markdown (.Rmd) file that includes the full analys
 - Clone this repository or download the .Rmd file.
 - Open the file in RStudio.
 - Run the code chunks or knit the file to HTML/PDF/Word to reproduce the analysis and visualisations.
+
+## Output
+Alongside the .Rmd file, this repository also includes a pre-rendered PDF report (HappScore.pdf).
+It shows the complete knitted output of the R Markdown file, including the analysis, tables, and visualisations.
+This allows you to explore the results directly without running the code.
